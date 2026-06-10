@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent_loop import AgentLoop, LoopResult
+from agent_loop import AgentLoop, LLMClient, LoopResult
 from circuit_breaker import CircuitBreaker
 from ledger import Ledger
 from spec_writer import SpecResult
@@ -249,6 +249,11 @@ def test_messages_grow_across_turns(spec, breaker, ledger):
     assert msgs_second[0] == {"role": "user", "content": "starter"}
     assert msgs_second[1] == {"role": "assistant", "content": "first"}
     assert msgs_second[2] == {"role": "user", "content": "continue"}
+
+
+def test_fake_client_satisfies_llm_client_protocol():
+    client = FakeClient([make_response()])
+    assert isinstance(client, LLMClient)
 
 
 def test_response_without_stop_reason_treated_as_end_turn(spec, breaker, ledger):

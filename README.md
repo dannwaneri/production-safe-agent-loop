@@ -49,6 +49,24 @@ pip install -r requirements.txt
 
 Python 3.10+ required. Verified on Python 3.14.
 
+### LLM client
+
+`AgentLoop` is parameterised on an `LLMClient` protocol — it accepts
+anything that looks like the Anthropic SDK shape:
+
+```python
+class LLMClient(Protocol):
+    messages: MessagesEndpoint  # .create(model, max_tokens, system, messages)
+```
+
+The default install ships with `anthropic` and `examples/` uses it
+directly. To plug in a different provider (OpenAI, Gemini, Ollama, local
+inference), write a ~20-line adapter that exposes that shape and pass it
+to `AgentLoop`. The `FakeClient` in `tests/test_agent_loop.py` is the
+canonical example of a non-Anthropic client satisfying the protocol —
+it's a pure Python class with no SDK dependency, and the full test suite
+exercises it.
+
 ---
 
 ## Quick start
@@ -159,8 +177,10 @@ result = loop.run(task)
 # LoopResult(success, turns, total_tokens, session_id, breach_reason)
 ```
 
-`client` is anything with a `messages.create()` method — the real
-`anthropic.Anthropic()` client or a test double.
+`client` is anything that satisfies the `LLMClient` protocol — the real
+`anthropic.Anthropic()` client, an adapter wrapping OpenAI / Gemini /
+Ollama, or a test double. See the **LLM client** section under Install
+for the protocol shape.
 
 `LoopResult.session_id` is inherited from `spec.session_id` so the
 ledger rows tie back to the spec without a join.

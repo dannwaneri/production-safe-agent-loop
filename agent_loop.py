@@ -1,10 +1,20 @@
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable
 
 from circuit_breaker import CircuitBreaker, CircuitBreakerError
 from ledger import Ledger
 from spec_writer import SpecResult
+
+
+@runtime_checkable
+class MessagesEndpoint(Protocol):
+    def create(self, *, model: str, max_tokens: int, system: str, messages: list) -> object: ...
+
+
+@runtime_checkable
+class LLMClient(Protocol):
+    messages: MessagesEndpoint
 
 
 @dataclass(frozen=True)
@@ -22,7 +32,7 @@ class AgentLoop:
         spec: SpecResult,
         circuit_breaker: CircuitBreaker,
         ledger: Ledger,
-        client,
+        client: LLMClient,
         model: str = "claude-sonnet-4-6",
         max_tokens: int = 1024,
     ) -> None:
