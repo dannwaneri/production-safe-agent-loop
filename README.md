@@ -77,12 +77,34 @@ export ANTHROPIC_API_KEY=sk-...
 python examples/seo_audit_example.py https://example.com
 ```
 
-The example:
+Every example follows the same flow:
 
 1. Prompts you for a 3-question spec.
-2. Crawls the URL with `requests` + `BeautifulSoup`.
-3. Runs the agent loop against the extracted SEO signals.
+2. Loads its hardcoded sample input (or, for the SEO example, crawls the URL).
+3. Runs the agent loop against the input under the circuit breaker.
 4. Prints the ledger on completion (or breach).
+5. Loads the review surface and prompts you to attest.
+
+## Examples
+
+Four runnable demos under `examples/`, all using the same five-primitive
+pattern against different domains enterprises actually deploy in production:
+
+| Example | Domain | Sample input |
+|---|---|---|
+| `seo_audit_example.py` | SEO audit of a single URL | live crawl (requests + BS4) |
+| `coding_review_example.py` | P0 security review of a code diff | hardcoded sample diff |
+| `support_triage_example.py` | Customer support ticket triage | hardcoded batch of tickets |
+| `document_processing_example.py` | Structured extraction from invoices | hardcoded document text |
+
+```bash
+python examples/coding_review_example.py
+python examples/support_triage_example.py
+python examples/document_processing_example.py
+```
+
+Each example prints a suggested set of spec answers at the top — copy/paste
+them into the SpecWriter prompts to get straight to the loop.
 
 ---
 
@@ -301,7 +323,10 @@ production-safe-agent-loop/
 ├── review_surface.py
 ├── examples/
 │   ├── seo_audit_example.py
-│   └── review_example.py
+│   ├── review_example.py
+│   ├── coding_review_example.py
+│   ├── support_triage_example.py
+│   └── document_processing_example.py
 └── tests/
     ├── test_spec_writer.py
     ├── test_circuit_breaker.py
