@@ -22,9 +22,10 @@ Production agent loops have a documented track record of running away:
 - FinOps Foundation 2026: **73% of enterprises** report AI costs exceeded
   projections.
 
-The pattern this repo teaches: **four small primitives — a spec writer,
-a circuit breaker, an audit ledger, and a loop that respects both —
-catch most of those failure modes before they ship.**
+The pattern this repo teaches: **five small primitives — a spec writer,
+a circuit breaker, an audit ledger, a loop that respects both, and a
+review surface that records human attestation — catch most of those
+failure modes before they ship.**
 
 ---
 
@@ -36,9 +37,28 @@ catch most of those failure modes before they ship.**
 | `circuit_breaker.py` | Hard ceilings on turns and tokens. Trips with a checkpoint. |
 | `ledger.py` | Append-only SQLite audit trail. One row per turn. |
 | `agent_loop.py` | The loop that ties them together. |
-| `review_surface.py` | Assembles a five-element review frame for human attestation. |
+| `review_surface.py` | Assembles the five-element review frame and records human attestation. |
 
 Each module is independently importable and testable.
+
+---
+
+## The five-element review frame
+
+After a loop finishes, `ReviewSurface` assembles a fixed five-element
+frame from the spec and ledger databases: the **original promise**
+(the three SpecWriter answers), the **acceptance criteria** (the
+`done_looks_like` benchmark rendered as the explicit yardstick), the
+**diff** (first input hash, final state, turns completed, tokens
+consumed, breach flag), the **evidence** (every ledger row for the
+session), and the **unresolved assumptions** (anything derived from
+breach rows or `pass_fail=False` rows). The same five elements,
+in the same order, every run.
+
+Attestation is not approval. A reviewer attests that they reviewed the
+frame as rendered — the SHA-256 `frame_hash` is the receipt — and they
+take responsibility for what happens next. The loop runs to a human,
+who decides whether downstream systems get the output.
 
 ---
 
@@ -298,11 +318,12 @@ python -m pytest tests/
 With coverage:
 
 ```bash
-python -m coverage run --source=circuit_breaker,ledger,spec_writer,agent_loop -m pytest tests/
+python -m coverage run --source=circuit_breaker,ledger,spec_writer,agent_loop,review_surface -m pytest tests/
 python -m coverage report -m
 ```
 
-**Current status: 80 tests, 100% coverage on all five core modules.**
+**Current status: 80 tests, 253 statements, 100% coverage on all five
+core modules.**
 
 Tests run without network access and without an Anthropic key —
 the loop is exercised against a `FakeClient` test double that mimics
