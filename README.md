@@ -28,7 +28,7 @@ catch most of those failure modes before they ship.**
 
 ---
 
-## The four primitives
+## The five primitives
 
 | Module | Role |
 |---|---|
@@ -36,6 +36,7 @@ catch most of those failure modes before they ship.**
 | `circuit_breaker.py` | Hard ceilings on turns and tokens. Trips with a checkpoint. |
 | `ledger.py` | Append-only SQLite audit trail. One row per turn. |
 | `agent_loop.py` | The loop that ties them together. |
+| `review_surface.py` | Assembles a five-element review frame for human attestation. |
 
 Each module is independently importable and testable.
 
@@ -185,6 +186,32 @@ for the protocol shape.
 `LoopResult.session_id` is inherited from `spec.session_id` so the
 ledger rows tie back to the spec without a join.
 
+### `ReviewSurface`
+
+```python
+from review_surface import ReviewSurface
+
+surface = ReviewSurface(spec_db_path="spec.db", ledger_db_path="ledger.db")
+print(surface.render(session_id))                 # human-readable frame
+attestation = surface.attest(session_id, "alice", notes="LGTM")
+# AttestationResult(id, session_id, reviewer, attested_at, notes, frame_hash)
+```
+
+Reads a completed session out of the spec + ledger databases and
+assembles a five-element frame for human review:
+
+1. **Original promise** — the three SpecWriter answers.
+2. **Acceptance criteria** — the `done_looks_like` benchmark.
+3. **Diff** — first input hash, final state, turns, tokens, breach flag.
+4. **Evidence** — every ledger row, formatted.
+5. **Unresolved assumptions** — derived from any breach rows or
+   `pass_fail=False` rows.
+
+`attest()` writes a row to a new append-only `attestations` table and
+returns an `AttestationResult` carrying a `frame_hash` — a SHA-256 over a
+canonical serialization of the frame data (excluding the load timestamp,
+so two reviewers attesting the same session get the same hash).
+
 ---
 
 ## Database schema
@@ -221,6 +248,23 @@ Index: `idx_spec_session` on `session_id`.
 
 Index: `idx_ledger_session` on `session_id`.
 
+### `ledger.db` → `attestations`
+
+Created the first time `ReviewSurface` is instantiated against the
+ledger database.
+
+| col | type |
+|---|---|
+| id | INTEGER PRIMARY KEY AUTOINCREMENT |
+| session_id | TEXT NOT NULL |
+| reviewer | TEXT NOT NULL |
+| attested_at | TEXT NOT NULL (ISO 8601, UTC) |
+| notes | TEXT |
+| frame_hash | TEXT NOT NULL (SHA-256 of canonical frame) |
+
+Index: `idx_attestation_session` on `session_id`. Append-only — no
+updates, no deletes.
+
 ---
 
 ## Running tests
@@ -236,7 +280,7 @@ python -m coverage run --source=circuit_breaker,ledger,spec_writer,agent_loop -m
 python -m coverage report -m
 ```
 
-**Current status: 62 tests, 100% coverage on the four core modules.**
+**Current status: 80 tests, 100% coverage on all five core modules.**
 
 Tests run without network access and without an Anthropic key —
 the loop is exercised against a `FakeClient` test double that mimics
@@ -254,13 +298,16 @@ production-safe-agent-loop/
 ├── circuit_breaker.py
 ├── ledger.py
 ├── agent_loop.py
+├── review_surface.py
 ├── examples/
-│   └── seo_audit_example.py
+│   ├── seo_audit_example.py
+│   └── review_example.py
 └── tests/
     ├── test_spec_writer.py
     ├── test_circuit_breaker.py
     ├── test_ledger.py
     ├── test_agent_loop.py
+    ├── test_review_surface.py
     └── test_seo_audit_example.py
 ```
 
