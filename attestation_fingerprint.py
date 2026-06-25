@@ -21,6 +21,7 @@ calibrated from real shadow-mode data; defaults here are conservative.
 """
 import json
 import sqlite3
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional, Protocol, runtime_checkable
@@ -373,7 +374,63 @@ class AttestationFingerprint:
             )
             results.append(result)
 
+        # Zero-tolerance cross-key model_substitution check. Fires when
+        # ledger and billing claim DIFFERENT models for the same
+        # (bucket, actor). Independent of the per-key missing_record /
+        # ghost_call signals — those alert too, but their severity could
+        # plausibly be softened in future for ingestion-lag handling.
+        # This check enforces the zero-tolerance contract directly,
+        # regardless of what happens to the decomposed signals.
+        for sub in self._detect_cross_key_model_substitutions(
+            ledger_by_key, usage_by_key,
+        ):
+            bucket_start, api_key_id, workspace_id, ledger_model, billing_model = sub
+            bucket_end = (
+                datetime.fromisoformat(bucket_start) + timedelta(minutes=1)
+            ).isoformat()
+            results.append(self._record_diff(
+                bucket_start=bucket_start,
+                bucket_end=bucket_end,
+                model_id=f"{ledger_model}|{billing_model}",
+                api_key_id=api_key_id,
+                workspace_id=workspace_id,
+                ledger_call_count=0,
+                usage_records_present=True,
+                findings=[DriftFinding(
+                    drift_class="model_substitution",
+                    severity="alert",
+                    details=(
+                        f"Ledger claims model={ledger_model!r} but "
+                        f"billing claims model={billing_model!r} for "
+                        f"(bucket={bucket_start}, actor={api_key_id})"
+                    ),
+                )],
+                severity="alert",
+            ))
+
         return self._apply_actor_accumulation(results)
+
+    @staticmethod
+    def _detect_cross_key_model_substitutions(
+        ledger_by_key: dict, usage_by_key: dict,
+    ) -> list:
+        ledger_models: dict = defaultdict(set)
+        usage_models: dict = defaultdict(set)
+        for (bucket, model, ak, ws) in ledger_by_key:
+            ledger_models[(bucket, ak, ws)].add(model)
+        for (bucket, model, ak, ws) in usage_by_key:
+            usage_models[(bucket, ak, ws)].add(model)
+
+        substitutions = []
+        common = set(ledger_models) & set(usage_models)
+        for actor_bucket in sorted(common):
+            bucket, ak, ws = actor_bucket
+            ledger_only = ledger_models[actor_bucket] - usage_models[actor_bucket]
+            billing_only = usage_models[actor_bucket] - ledger_models[actor_bucket]
+            for lm in sorted(ledger_only):
+                for bm in sorted(billing_only):
+                    substitutions.append((bucket, ak, ws, lm, bm))
+        return substitutions
 
     def diff_recent_buckets(
         self,

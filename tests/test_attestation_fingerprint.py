@@ -630,6 +630,64 @@ def test_diff_handles_empty_window(af):
     assert results == []
 
 
+def test_diff_window_fires_explicit_model_substitution_with_matching_tokens(af):
+    # Zero-tolerance guarantee: a model swap MUST fire model_substitution
+    # at the diff_window level, independent of token-mismatch tolerance,
+    # even when token counts match exactly. This is the contract Mike's
+    # spec demanded: "no legitimate reason for it to differ."
+    ts = FIXED_NOW - timedelta(minutes=1)
+    bucket = ts.replace(second=0, microsecond=0).isoformat()
+    af.record_fingerprint(
+        session_id="s", turn_count=1,
+        model_id="claude-sonnet-4-6",  # Ledger claims sonnet
+        tokens_in=400, tokens_out=200, timestamp=ts,
+    )
+    af.usage_client = FakeUsageClient([{
+        "data": [_bucket_payload(
+            bucket_start=bucket,
+            model="claude-opus-4-8",  # But billing says opus
+            uncached_input=400, output=200,  # Matching tokens — no token drift
+        )],
+    }])
+    results = af.diff_window(
+        FIXED_NOW - timedelta(minutes=3), FIXED_NOW,
+    )
+    model_sub = [
+        f for r in results for f in r.drift_findings
+        if f.drift_class == "model_substitution"
+    ]
+    assert len(model_sub) >= 1, (
+        f"Expected explicit model_substitution alert, got: "
+        f"{[(r.severity, [f.drift_class for f in r.drift_findings]) for r in results]}"
+    )
+    assert all(f.severity == "alert" for f in model_sub)
+
+
+def test_diff_window_no_model_substitution_when_models_match(af):
+    # Sanity check: when ledger and billing agree on model, no
+    # model_substitution finding fires.
+    ts = FIXED_NOW - timedelta(minutes=1)
+    bucket = ts.replace(second=0, microsecond=0).isoformat()
+    af.record_fingerprint(
+        session_id="s", turn_count=1, model_id="claude-sonnet-4-6",
+        tokens_in=400, tokens_out=200, timestamp=ts,
+    )
+    af.usage_client = FakeUsageClient([{
+        "data": [_bucket_payload(
+            bucket_start=bucket, model="claude-sonnet-4-6",
+            uncached_input=400, output=200,
+        )],
+    }])
+    results = af.diff_window(
+        FIXED_NOW - timedelta(minutes=3), FIXED_NOW,
+    )
+    model_sub = [
+        f for r in results for f in r.drift_findings
+        if f.drift_class == "model_substitution"
+    ]
+    assert model_sub == []
+
+
 def test_diff_one_returns_empty_when_both_none(af):
     assert af._diff_one(None, None) == []
 
